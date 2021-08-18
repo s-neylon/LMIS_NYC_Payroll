@@ -1,0 +1,143 @@
+---
+title: "LMIS_Titles"
+author: "Sam Neylon"
+date: "August 4, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#### Using "here" to keep project directory as working directory
+#### NOTE: Rmarkdown will try to make the file it is inside the working directory, but "here" should fix it.
+
+library(here)
+library(tidyverse)
+library(data.table)
+
+```
+  
+# Import
+
+## fread
+
+```{r eval=TRUE}
+
+# Import/Rename columns
+
+nyc_data <- fread(here("data/ALL_Citywide_Payroll_Data__Fiscal_Year_.csv"), col.names = c("FY", "payroll_num", "agency", "last", "first", "ME", "start_date", "borough", "title", "leave_status", "base_salary", "pay_basis", "reg_hours", "reg_grosspaid", "OT_hrs", "OT_paid", "total_otherPay"))
+
+# Rename columns - Filter for FY2019-2020
+
+nyc_data <- nyc_data %>% select(FY, agency, title, base_salary, pay_basis, reg_hours, reg_grosspaid, OT_hrs, OT_paid, total_otherPay) %>% 
+  filter(FY > 2018)
+
+
+```
+
+# Clean
+
+* Filter out zero reg_grosspaid and zero reg_hours
+* "gross_wOT": column adding up Gross Paid and total overtime (OT) paid
+* "hrly": Calculate "hourly" (not official hourly rate) by dividing Gross Paid by Regular (annual) hours
+
+* Some job titles have asterisk or question marks - after cursory look at the data, I don't believe they are substantially different, so I delete these symbols.
+
+```{r eval=TRUE}
+
+nyc_data <- nyc_data %>%
+  filter(reg_grosspaid > 0 & reg_hours > 0) %>% 
+  mutate(
+  gross_wOT = reg_grosspaid + OT_paid,
+  hrly = reg_grosspaid / reg_hours
+)
+
+nyc_data <- nyc_data %>% mutate(
+  title = gsub("\\*", "", title),
+  title = gsub("\\?", "", title)
+)
+
+```
+
+# Summary Table
+
+I group rows by job title, so that each statistic is calculated on all the observations within a title. This pools multiple fiscal years, which I why I filtered for fiscal years I was interested in earlier.
+
+```{r eval=TRUE}
+
+nyc_group <- nyc_data %>% group_by(title)
+
+nyc_wages <- nyc_group %>% summarise(
+  tot_emp = n(),
+  avg_pay = mean(reg_grosspaid),
+  med_pay = median(reg_grosspaid),
+  avg_pay = mean(reg_grosspaid),
+  pay_q25 = quantile(reg_grosspaid, .25),
+  pay_q75 = quantile(reg_grosspaid, .75),
+  avg_hourly = mean(hrly),
+  med_hourly = median(hrly),
+  hrly_q25 = quantile(hrly, .25),
+  hrly_q75 = quantile(hrly, .75),
+  avg_hours = mean(reg_hours),
+  med_hours = median(reg_hours),
+  q25_hours = quantile(reg_hours, .25),
+  q75_hours = quantile(reg_hours, .75),
+  OT_avg_pay = mean(gross_wOT),
+  OT_med_pay = median(gross_wOT),
+  OT_avg_pay = mean(gross_wOT),
+  OT_pay_q25 = quantile(gross_wOT, .25),
+  OT_pay_q75 = quantile(gross_wOT, .75)
+)
+
+rm(nyc_group)
+
+```
+ 
+# Export
+
+```{r eval=FALSE}
+
+write_csv(nyc_wages, "nyc_wages_FY2019-20_08-05-21.csv")
+
+```
+
+# Data Exploration
+
+I want to see what difference "per Hour" vs "per Annum" makes...
+
+```{r eval=FALSE}
+
+nyc_basis <- nyc_data %>% group_by(pay_basis)
+
+nyc_basis <- nyc_basis %>% summarise(
+  tot_emp = n(),
+  avg_pay = mean(reg_grosspaid),
+  med_pay = median(reg_grosspaid),
+  avg_pay = mean(reg_grosspaid),
+  pay_q25 = quantile(reg_grosspaid, .25),
+  pay_q75 = quantile(reg_grosspaid, .75),
+  avg_hourly = mean(hrly),
+  med_hourly = median(hrly),
+  hrly_q25 = quantile(hrly, .25),
+  hrly_q75 = quantile(hrly, .75),
+  OT_avg_pay = mean(gross_wOT),
+  OT_med_pay = median(gross_wOT),
+  OT_avg_pay = mean(gross_wOT),
+  OT_pay_q25 = quantile(gross_wOT, .25),
+  OT_pay_q75 = quantile(gross_wOT, .75)
+)
+
+
+```
+
+# Outliers
+
+```{r eval=FALSE}
+
+hist(nyc_data$reg_grosspaid)
+
+```
+
+
+
+

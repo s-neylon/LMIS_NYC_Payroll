@@ -1,0 +1,239 @@
+---
+title: "EDA LMIS_Titles"
+author: "Sam Neylon"
+date: "August 15, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#### Using "here" to keep project directory as working directory
+#### NOTE: Rmarkdown will try to make the file it is inside the working directory, but "here" should fix it.
+
+library(here)
+library(tidyverse)
+library(data.table)
+
+```
+
+# Notebook
+
+## (08-04-2021)
+
+I need to import the NYC OpenData payroll information (https://data.cityofnewyork.us/City-Government/Citywide-Payroll-Data-Fiscal-Year-/k397-673e/data)
+
+* Create table where rows are job titles
+
+Columns:
+
+* Avg Gross Pay
+  * Median
+  * Quartiles
+  * min and max?
+*NOTE* Maybe do it in style of OEWS: https://statistics.labor.ny.gov/lswage2.asp
+  * Mean
+  * Median
+  * "Entry" - "The mean (average) of the bottom third of wages in an occupation"
+  * "Experienced" - "The mean (average) of the top two-thirds of wages in an occupation"
+  * Maybe not - this seems weirdly complicated
+* Avg Pay+overtime
+  * Median + quartiles
+* Most common employing agency
+  * Look up in Data for R
+  *NOTE* Too difficult
+  
+# Import
+
+## fread
+
+```{r eval=TRUE}
+
+nyc_data <- fread(here("data/ALL_Citywide_Payroll_Data__Fiscal_Year_.csv"), col.names = c("FY", "payroll_num", "agency", "last", "first", "ME", "start_date", "borough", "title", "leave_status", "base_salary", "pay_basis", "reg_hours", "reg_grosspaid", "OT_hrs", "OT_paid", "total_otherPay"))
+
+nyc_data <- nyc_data %>% select(FY, agency, title, base_salary, pay_basis, reg_hours, reg_grosspaid, OT_hrs, OT_paid, total_otherPay) %>% 
+  filter(FY > 2018)
+
+
+```
+
+# Adding up OT
+
+I want a column where I add up OT with gross pay
+
+```{r eval=TRUE}
+
+nyc_data <- nyc_data %>%
+  filter(reg_grosspaid > 0 & reg_hours > 0) %>% 
+  mutate(
+  gross_wOT = reg_grosspaid + OT_paid,
+  hrly = reg_grosspaid / reg_hours
+)
+
+nyc_data <- nyc_data %>% mutate(
+  title = gsub("\\*", "", title),
+  title = gsub("\\?", "", title)
+)
+
+```
+
+
+
+# Summary Table
+
+```{r eval=TRUE}
+
+nyc_group <- nyc_data %>% group_by(title)
+
+nyc_wages <- nyc_group %>% summarise(
+  tot_emp = n(),
+  avg_pay = mean(reg_grosspaid),
+  med_pay = median(reg_grosspaid),
+  avg_pay = mean(reg_grosspaid),
+  pay_q25 = quantile(reg_grosspaid, .25),
+  pay_q75 = quantile(reg_grosspaid, .75),
+  avg_hourly = mean(hrly),
+  med_hourly = median(hrly),
+  hrly_q25 = quantile(hrly, .25),
+  hrly_q75 = quantile(hrly, .75),
+  avg_hours = mean(reg_hours),
+  med_hours = median(reg_hours),
+  q25_hours = quantile(reg_hours, .25),
+  q75_hours = quantile(reg_hours, .75),
+  OT_avg_pay = mean(gross_wOT),
+  OT_med_pay = median(gross_wOT),
+  OT_avg_pay = mean(gross_wOT),
+  OT_pay_q25 = quantile(gross_wOT, .25),
+  OT_pay_q75 = quantile(gross_wOT, .75)
+)
+
+rm(nyc_group)
+
+```
+ 
+# Export
+
+```{r eval=FALSE}
+
+write_csv(nyc_wages, "nyc_wages_FY2019-20_08-05-21.csv")
+
+```
+
+# Data Exploration
+
+I want to see what difference "per Hour" vs "per Annum" makes...
+
+```{r eval=FALSE}
+
+nyc_basis <- nyc_data %>% group_by(pay_basis)
+
+nyc_basis <- nyc_basis %>% summarise(
+  tot_emp = n(),
+  avg_pay = mean(reg_grosspaid),
+  med_pay = median(reg_grosspaid),
+  avg_pay = mean(reg_grosspaid),
+  pay_q25 = quantile(reg_grosspaid, .25),
+  pay_q75 = quantile(reg_grosspaid, .75),
+  avg_hourly = mean(hrly),
+  med_hourly = median(hrly),
+  hrly_q25 = quantile(hrly, .25),
+  hrly_q75 = quantile(hrly, .75),
+  OT_avg_pay = mean(gross_wOT),
+  OT_med_pay = median(gross_wOT),
+  OT_avg_pay = mean(gross_wOT),
+  OT_pay_q25 = quantile(gross_wOT, .25),
+  OT_pay_q75 = quantile(gross_wOT, .75),
+  avg_hours = mean(reg_hours),
+  med_hours = median(reg_hours),
+  q25_hours = quantile(reg_hours, .25),
+  q75_hours = quantile(reg_hours, .75)
+)
+
+
+```
+
+*NOTE* What should I do about prorated per annum?
+
+Maybe erase?
+
+## Per Hour vs Annual by title
+
+I want to run a logic exercise, where I get only for titles that have both per hour and per annum.
+
+Or maybe variables which are counts for each type of basis?
+
+```{r eval=FALSE}
+
+nyc_group <- nyc_data %>% group_by(title)
+
+basis_compare <- nyc_group %>% count(pay_basis)
+
+```
+
+### Export basis_compare
+
+```{r eval=FALSE}
+
+write_csv(basis_compare, "basis_compare.csv")
+
+```
+
+## Wider version
+
+```{r eval=FALSE}
+
+nyc_group <- nyc_data %>% group_by(title)
+
+basis_compare <- nyc_group %>% count(pay_basis)
+
+basis_wider <- basis_compare %>% pivot_wider(names_from = pay_basis, values_from = n) %>% rename(
+  perAnnum = "per Annum",
+  perHour = "per Hour",
+  perDay = "per Day",
+  ProratedAnnual = "Prorated Annual"
+)
+
+rm(nyc_group)
+
+basis_mult <- basis_wider %>% ungroup() %>% 
+  mutate(
+  perAnn = if_else(!is.na(perAnnum), 1, 0),
+  perHr = if_else(!is.na(perHour), 1, 0),
+  perDy = if_else(!is.na(perDay), 1, 0),
+  mult = perAnn + perHr + perDy
+)
+
+### Failed Tests
+
+# basis_test <- basis_wider %>% mutate(
+  mult = if_else(!is.na("per Annum"), 0, 
+                 if_else(!is.na("per Hour"), 1, 
+                         if_else(!is.na("per Day"), 1, 0)))
+)
+
+# basis_test <- basis_wider %>% mutate(
+  mult = !is.na("per Annum")*1 + !is.na("per Hour")*1 + !is.na("per Day")*1
+) 
+
+
+
+#basis_test <- basis_wider %>% ungroup() %>% 
+  mutate(perAnnum = !is.na("per Annum"))
+
+#basis_widerTEST <- basis_compare %>% pivot_wider(names_from = pay_basis, values_from = n, values_drop_na = TRUE)
+
+```
+
+### Export basis_compare
+
+```{r eval=FALSE}
+
+write_csv(basis_wider, "basis_wider.csv")
+
+```
+
+```{r eval=FALSE}
+
+write_csv(basis_mult, "basis_mult.csv")
+
+```
