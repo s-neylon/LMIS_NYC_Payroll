@@ -1,0 +1,93 @@
+---
+title: "Download Payroll Data"
+author: "Sam Neylon"
+date: "August 18, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(here)
+
+## install.packages("RSocrata")
+
+library("RSocrata")
+
+```
+
+# NOTE!!!
+
+This code is incomplete - currently, it downloads the City Payroll Data directly into R as a dataframe. This doesn't save the data on your hard drive. I was going to write code to save this imported data as a csv, but this whole method seems a bit too complicated. Instead, I simply shared my project file on OneDrive, which contains the necessary payroll files as a csv.
+
+I could complete the code by saving the R data frame as a csv, but this seems to be a bit circuitous: RSocrata Downloads csv -> R converts directly into data frame -> R converts back into csv and saves as csv. That is 2 conversions! It seems easier to just go the the html below and download the csv directly, and put it in the file "NYC_Payroll/data" - because this is where the other code is looking for it.
+
+# Download NYC OpenData Payroll
+
+This code will use the Socrata API to download New York City's payroll data, provided on the NYC OpenData platform.
+
+For this LMIS project, we are using GitHUb for version control. However, for people to actually run and test the code, they will need to download it. This is because GitHub, to save storage space, will only sync *code* files, not csv or Excel files which are produced with the code.
+
+NYC OpenData: https://data.cityofnewyork.us/City-Government/Citywide-Payroll-Data-Fiscal-Year-/k397-673e
+
+## RSocrata
+
+The NYC OpenData is made available through Socrata, and RSocrata is a package which allows us to interact with the API and download the data.
+
+RSocrata: https://github.com/Chicago/RSocrata/blob/master/README.md
+
+Here is some sample RSocrata code:
+
+```{r eval=FALSE}
+
+## Install the required package with:
+## install.packages("RSocrata")
+
+library("RSocrata")
+
+df <- read.socrata(
+  "https://data.cityofnewyork.us/resource/k397-673e.json",
+  app_token = "YOURAPPTOKENHERE",
+  email     = "user@example.com",
+  password  = "fakepassword"
+)
+
+```
+
+
+
+While we could use RSocrata to simply import the data directly into R, because this is a large file, it seemed better to download it as a csv file, and place it in "NYC_Payroll/data". Other code is written to look in this file for the csv.
+
+## Setup
+
+API info for payroll data: https://dev.socrata.com/foundry/data.cityofnewyork.us/k397-673e
+
+As you can see in the API info site above, using RSocrata requires an app token, and I have registered one for "LMIS_NYC_Payroll"
+
+Token: 98ELG2MF6cJaP1rUJTzN0MWrT
+
+
+```{r eval=FALSE}
+
+token <- "98ELG2MF6cJaP1rUJTzN0MWrT"
+
+```
+
+## Download csv as data frame
+
+Using RSocrata to download and then save csv
+
+```{r}
+
+df <- read.socrata(
+  "https://data.cityofnewyork.us/resource/k397-673e.csv",
+  app_token = token
+) 
+
+# NOTE: This will just download City Data and import into R, not save it as a csv. If you use this method, you will need to wait a long
+
+```
+
+## Save 
+
+

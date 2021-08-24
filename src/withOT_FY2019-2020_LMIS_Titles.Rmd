@@ -38,6 +38,7 @@ nyc_data <- nyc_data %>% select(FY, agency, title, base_salary, pay_basis, reg_h
 # Clean
 
 * Filter out zero reg_grosspaid and zero reg_hours
+* "gross_wOT": column adding up Gross Paid and total overtime (OT) paid
 * "hrly": Calculate "hourly" (not official hourly rate) by dividing Gross Paid by Regular (annual) hours
 
 * Some job titles have asterisk or question marks - after cursory look at the data, I don't believe they are substantially different, so I delete these symbols.
@@ -47,6 +48,7 @@ nyc_data <- nyc_data %>% select(FY, agency, title, base_salary, pay_basis, reg_h
 nyc_data <- nyc_data %>%
   filter(reg_grosspaid > 0 & reg_hours > 0) %>% 
   mutate(
+  gross_wOT = reg_grosspaid + OT_paid,
   hrly = reg_grosspaid / reg_hours
 )
 
@@ -79,7 +81,12 @@ nyc_wages <- nyc_group %>% summarise(
   avg_hours = mean(reg_hours),
   med_hours = median(reg_hours),
   q25_hours = quantile(reg_hours, .25),
-  q75_hours = quantile(reg_hours, .75)
+  q75_hours = quantile(reg_hours, .75),
+  OT_avg_pay = mean(gross_wOT),
+  OT_med_pay = median(gross_wOT),
+  OT_avg_pay = mean(gross_wOT),
+  OT_pay_q25 = quantile(gross_wOT, .25),
+  OT_pay_q75 = quantile(gross_wOT, .75)
 )
 
 rm(nyc_group)
@@ -88,9 +95,9 @@ rm(nyc_group)
  
 # Export
 
-```{r eval=TRUE}
+```{r eval=FALSE}
 
-write_csv(nyc_wages, "nyc_wages_FY2019-20_08-24-21.csv")
+write_csv(nyc_wages, "nyc_wages_FY2019-20_08-05-21.csv")
 
 ```
 

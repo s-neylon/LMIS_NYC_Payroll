@@ -36,12 +36,12 @@ Columns:
   * Median
   * "Entry" - "The mean (average) of the bottom third of wages in an occupation"
   * "Experienced" - "The mean (average) of the top two-thirds of wages in an occupation"
-  * Maybe not - this seems weirdly complicated
+  * Maybe not - this seems overly complicated
 * Avg Pay+overtime
   * Median + quartiles
 * Most common employing agency
-  * Look up in Data for R
-  *NOTE* Too difficult
+  * Look up method in book "R for Data Science"
+  * UPDATE: Too difficult
   
 # Import
 
