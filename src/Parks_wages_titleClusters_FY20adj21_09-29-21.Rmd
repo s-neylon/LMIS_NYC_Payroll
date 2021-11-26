@@ -1,0 +1,231 @@
+---
+title: "LMIS_Titles"
+author: "Sam Neylon"
+date: "August 4, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#### Using "here" to keep project directory as working directory
+#### NOTE: Rmarkdown will try to make the file it is inside the working directory, but "here" should fix it.
+
+library(here)
+library(tidyverse)
+library(data.table)
+
+```
+
+# FY20-21(adjusted) - Title Clusters
+
+This file produces a summary statistics for titles in the NYC OpenData payroll information.
+
+NYC OpenData: https://data.cityofnewyork.us/City-Government/Citywide-Payroll-Data-Fiscal-Year-/k397-673e
+
+Notes:
+  * This file uses the raw data for FY2020
+  * This file then creates 2021 statistics by *1.7%*
+    * This is in line with the adjustments made by the OEWS for state and local government workers: https://statistics.labor.ny.gov/lstechoes.shtm
+  * In line with OEWS statistics, this file estimates two wage statistics:
+    1. "Entry" - this is the average wage for the bottom 1/3 of wage earners in that title
+    2. "Experienced" - this is the average wage for the top 2/3 of wage earners in that title.
+
+## Title Clusters
+
+To get a more accurate sense of the wage range of a title, we clustered similar titles together. For example, the wage range for a "Landscape Architect" doesn't just encompass the actual title "Landscape Architect", but also positions above and below it (i.e. Assistant Landscape Architect).
+
+The goal of this is to make the data more comparable to the OEWS data, which gives you wage statistics by *occupation*, which may encompass several actual City titles.
+
+Using DC 37 provided title descriptions, job ads, and civil service descriptions, we created lists of related titles.
+
+In this file, we will calculate summary wage statistics based on these title clusters for Parks and Recreation-related titles. Note that these aren't just titles within the Parks dept., but are titles selected by LMIS and DC 37.
+
+*Reference* the file NYC_Payroll/doc/DC37_JobTitlesDetailedContent_Parks.xlsx
+  * The sheet "Title Clusters" is where Eileen noted her choices of titles for clusters.
+
+# Import
+
+## fread
+
+```{r eval=TRUE}
+
+# Import/Rename columns
+
+nyc_data <- fread(here("data/ALL_Citywide_Payroll_Data__Fiscal_Year_.csv"), col.names = c("FY", "payroll_num", "agency", "last", "first", "ME", "start_date", "borough", "title", "leave_status", "base_salary", "pay_basis", "reg_hours", "reg_grosspaid", "OT_hrs", "OT_paid", "total_otherPay"))
+
+# Rename columns - Filter for FY2020
+
+nyc_data <- nyc_data %>% select(FY, agency, title, base_salary, pay_basis, reg_hours, reg_grosspaid) %>% 
+  filter(FY == 2020)
+
+
+```
+
+# Clean
+
+* Filter out zero reg_grosspaid and zero reg_hours
+* "hrly": Calculate "hourly" (not official hourly rate) by dividing Gross Paid by Regular (annual) hours
+* Create an adjusted 2021 wage by multiplying regular gross paid by 1.7%
+
+* Some job titles have asterisk or question marks - after cursory look at the data, I don't believe they are substantially different, so I delete these symbols.
+
+```{r eval=TRUE}
+
+nyc_data <- nyc_data %>%
+  filter(reg_grosspaid > 0 & reg_hours > 0) %>% 
+  mutate(
+  hrly = reg_grosspaid / reg_hours,
+  reg_grosspaid21 = reg_grosspaid * 1.017,
+  hrly21 = reg_grosspaid21 / reg_hours
+)
+
+nyc_data <- nyc_data %>% mutate(
+  title = gsub("\\*", "", title),
+  title = gsub("\\?", "", title)
+)
+
+```
+
+# Parks Title Clusters Code
+
+## Filter Data for only Parks and Rec brochure titles:
+
+First I filter for just the titles we are using in the DC 37 Parks and Rec brochure.
+
+I used the file NYC_Payroll/doc/Parks_Titlecluster_pre-process.xlsx to get the titles in a list with quotes around them, and comma delimited. This is so I can save them as vectors, which I can reference more easily in my code.
+
+I will filter out CITY PARK WORKER titles who work less than 1,560 hours.
+
+```{r eval=TRUE}
+
+## All Parks titles
+
+parks <- c("PARK SUPERVISOR", "PRINCIPAL PARK SUPERVISOR", "GARDENER", "CLIMBER & PRUNER", "ASSOCIATE PARK SERVICE WORKER", "CITY PARK WORKER", "RECREATION SUPERVISOR", "RECREATION SPECIALIST", "RECREATION DIRECTOR", "PLAYGROUND ASSOCIATE", "ASSISTANT LANDSCAPE ARCHITECT", "LANDSCAPE ARCHITECT", "LANDSCAPE ARCHITECT INTERN", "ADMINISTRATIVE HORTICULTURIST", "ADMINISTRATIVE PARKS & RECREATION MANAGER", "FORESTER", "ASSOCIATE URBAN PARK RANGER", "URBAN PARK RANGER")
+
+## Title Clusters
+
+Park_Supervisor <- c("PARK SUPERVISOR", "PRINCIPAL PARK SUPERVISOR")
+
+Park_Service_Worker <- c("ASSOCIATE PARK SERVICE WORKER", "CITY PARK WORKER")
+
+Landscape_Architect <- c("ASSISTANT LANDSCAPE ARCHITECT", "LANDSCAPE ARCHITECT", "LANDSCAPE ARCHITECT INTERN")
+
+nyc_parks <- nyc_data %>% filter(title %in% parks) %>% filter(!(title %in% "CITY PARK WORKER" & reg_hours < 1560))
+
+
+```
+
+## Cluster ifelse
+
+I will be using ifelse statements to group related titles [see methodology above]. For titles which aren't in clusters, they will be grouped by title.
+
+I will slice the title "RECREATION SPECIALIST" into two titles, RECREATION PT and RECREATION FT, divided at 1560 annual hours (30hrs a week) - I came to this number using histograms to see the distribution of hours per employee in the title.
+
+PLAYGROUND ASSOCIATE will be recoded to "RECREATION PT"
+
+"ASSOCIATE URBAN PARK RANGER" will be recoded to "URBAN PARK RANGER"
+
+"URBAN PARK RANGER" will be recoded to "PARKS ENFORCEMENT OFFICER"
+
+```{r eval=TRUE}
+
+nyc_parks <- nyc_parks %>% mutate(
+  title_cluster = ifelse((title %in% Park_Supervisor), "PARK SUPERVISOR",
+                          ifelse((title %in% Park_Service_Worker), "PARK SERVICE WORKER",
+                                 ifelse((title %in% Landscape_Architect), "LANDSCAPE ARCHITECT",
+                                        ifelse((title %in% "RECREATION SPECIALIST" & reg_hours >= 1560), "RECREATION FT",
+                                               ifelse((title %in% "RECREATION SPECIALIST" & reg_hours < 1560), "RECREATION PT",
+                                                      ifelse((title %in% "PLAYGROUND ASSOCIATE"), "RECREATION PT", 
+                                                             ifelse((title %in% "ASSOCIATE URBAN PARK RANGER"), "URBAN PARK RANGER",
+                                                                    ifelse((title %in% "URBAN PARK RANGER"), "PARKS ENFORCEMENT OFFICER",
+                                                                           title))))))))
+)
+
+```
+
+## Full Time coding
+
+There are a few positions in which we keep rows with Part-Time workers, to get a sense of the actual annual pay that people can expect in some of these jobs with lots of seasonal and part-time positions.
+
+However, for other full-time jobs, those working less than a full year seem to be people who left the job early, rather than a reflection of expected annual pay. For these positions, I will be using the "base_salary" variable. This variable is less useful than regular gross paid, because it reflects per hour pay for hourly workers, and also it reflects annualized pay for part-time workers who may be truly part time.
+
+For observations which are not in the part-time careers we chose, who worked less than 1,560 hours, and who are paid on a per Annum basis, I will be replacing gross paid with base salary. 
+
+# Summary Table
+
+In line with OEWS statistics, this file estimates two wage statistics:
+  1. "Entry" - this is the average wage for the bottom 1/3 of wage earners in that title
+  2. "Experienced" - this is the average wage for the top 2/3 of wage earners in that title.
+  
+## First Tertile
+  
+  * First, calculate where the first third of wages within each title falls (the first tertile), and add this as a variable for each observation
+  * Second, create two logical variables. Variable "Entry" is TRUE if a given worker's regular gross pay is less than or equal to the first tertile and FALSE if not. For "Exper" (experienced), TRUE if more than first tertile, FALSE if not.
+
+
+```{r eval=TRUE}
+
+nyc_group <- nyc_parks %>% group_by(title_cluster)
+
+nyc_group <- nyc_group %>% mutate(tert = quantile(reg_grosspaid, 1/3), tert21 = quantile(reg_grosspaid21, 1/3)) %>% 
+  mutate(EntryTERT = (reg_grosspaid <= tert),
+         ExperTERT = (reg_grosspaid > tert),
+         EntryTERT21 = (reg_grosspaid21 <= tert21),
+         ExperTERT21 = (reg_grosspaid21 > tert21))
+
+```
+
+# Conditional Summaries
+
+Now that I have a logical vector for Entry and Experienced, I can multiply this by the individual values (see code below) so my summaries are only for particular workers within a title.
+
+NOTE: I have commented out two lines which gave me a count of how many Entry and Experienced in each position (I did this as a check on my work)
+
+```{r eval=TRUE}
+
+nyc_parks_wages <- nyc_group %>% summarise(
+  tot_emp = n(),
+  #entry_emp = sum(EntryTERT),
+  #exper_emp = sum(ExperTERT),
+  avg_pay = mean(reg_grosspaid),
+  med_pay = median(reg_grosspaid),
+  entry = mean(reg_grosspaid[EntryTERT == TRUE]),
+  exper = mean(reg_grosspaid[ExperTERT == TRUE]),
+  avg_pay21 = mean(reg_grosspaid21),
+  med_pay21 = median(reg_grosspaid21),
+  entry21 = mean(reg_grosspaid21[EntryTERT21 == TRUE]),
+  exper21 = mean(reg_grosspaid21[ExperTERT21 == TRUE]),
+  avg_hourly = mean(hrly),
+  med_hourly = median(hrly),
+  hrly_q25 = quantile(hrly, .25),
+  hrly_q75 = quantile(hrly, .75),
+  avg_hrly21 = mean(hrly21),
+  med_hrly21 = median(hrly21),
+  hrly21_q25 = quantile(hrly21, .25),
+  hrly21_q75 = quantile(hrly21, .75),
+  avg_hours = mean(reg_hours),
+  med_hours = median(reg_hours),
+  q25_hours = quantile(reg_hours, .25),
+  q75_hours = quantile(reg_hours, .75)
+)
+
+rm(nyc_group)
+
+```
+
+ 
+# Export
+
+*NOTE* This code creates a csv. In the final versions I upload, I open the csv in Excel, convert to xlsx, format the data as a table, re-format text so currency variables and numbers are formatted correctly, move the file to NYC_Payroll/output, then upload to SharePoint.
+
+```{r eval=FALSE}
+
+write_csv(nyc_parks_wages, "Parks_wages_titleClusters_FY20adj21_10-20-21.csv")
+
+```
+
+
+
+
+

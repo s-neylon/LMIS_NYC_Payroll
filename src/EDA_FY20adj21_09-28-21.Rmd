@@ -1,0 +1,166 @@
+---
+title: "LMIS_Titles"
+author: "Sam Neylon"
+date: "August 4, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#### Using "here" to keep project directory as working directory
+#### NOTE: Rmarkdown will try to make the file it is inside the working directory, but "here" should fix it.
+
+library(here)
+library(tidyverse)
+library(data.table)
+
+```
+
+# FY20-21(adjusted) - All Titles
+
+This file produces a summary statistics for titles in the NYC OpenData payroll information.
+
+NYC OpenData: https://data.cityofnewyork.us/City-Government/Citywide-Payroll-Data-Fiscal-Year-/k397-673e
+
+Notes:
+  * This file uses the raw data for FY2020
+  * This file then creates 2021 statistics by *1.7%*
+    * This is in line with the adjustments made by the OEWS for state and local government workers: https://statistics.labor.ny.gov/lstechoes.shtm
+  * In line with OEWS statistics, this file estimates two wage statistics:
+    1. "Entry" - this is the average wage for the bottom 1/3 of wage earners in that title
+    2. "Experienced" - this is the average wage for the top 2/3 of wage earners in that title.
+
+# Import
+
+## fread
+
+```{r eval=TRUE}
+
+# Import/Rename columns
+
+nyc_data <- fread(here("data/ALL_Citywide_Payroll_Data__Fiscal_Year_.csv"), col.names = c("FY", "payroll_num", "agency", "last", "first", "ME", "start_date", "borough", "title", "leave_status", "base_salary", "pay_basis", "reg_hours", "reg_grosspaid", "OT_hrs", "OT_paid", "total_otherPay"))
+
+# Rename columns - Filter for FY2020
+
+nyc_data <- nyc_data %>% select(FY, agency, title, base_salary, pay_basis, reg_hours, reg_grosspaid) %>% 
+  filter(FY == 2020)
+
+
+```
+
+# Clean
+
+* Filter out zero reg_grosspaid and zero reg_hours
+* "hrly": Calculate "hourly" (not official hourly rate) by dividing Gross Paid by Regular (annual) hours
+* Create an adjusted 2021 wage by multiplying regular gross paid by 1.7%
+
+* Some job titles have asterisk or question marks - after cursory look at the data, I don't believe they are substantially different, so I delete these symbols.
+
+```{r eval=TRUE}
+
+nyc_data <- nyc_data %>%
+  filter(reg_grosspaid > 0 & reg_hours > 0) %>% 
+  mutate(
+  hrly = reg_grosspaid / reg_hours,
+  reg_grosspaid21 = reg_grosspaid * 1.017,
+  hrly21 = reg_grosspaid21 / reg_hours
+)
+
+nyc_data <- nyc_data %>% mutate(
+  title = gsub("\\*", "", title),
+  title = gsub("\\?", "", title)
+)
+
+```
+
+# Summary Table
+
+In line with OEWS statistics, this file estimates two wage statistics:
+  1. "Entry" - this is the average wage for the bottom 1/3 of wage earners in that title
+  2. "Experienced" - this is the average wage for the top 2/3 of wage earners in that title.
+  
+## First Tertile
+  
+  * First, calculate where the first third of wages within each title falls (the first tertile), and add this as a variable for each observation
+  * Second, create two logical variables. Variable "Entry" is TRUE if a given worker's regular gross pay is less than or equal to the first tertile and FALSE if not. For "Exper" (experienced), TRUE if more than first tertile, FALSE if not.
+
+
+```{r eval=TRUE}
+
+nyc_group <- nyc_data %>% group_by(title)
+
+nyc_group <- nyc_group %>% mutate(tert = quantile(reg_grosspaid, 1/3), tert21 = quantile(reg_grosspaid21, 1/3)) %>% 
+  mutate(EntryTERT = (reg_grosspaid <= tert),
+         ExperTERT = (reg_grosspaid > tert),
+         EntryTERT21 = (reg_grosspaid21 <= tert21),
+         ExperTERT21 = (reg_grosspaid21 > tert21))
+
+```
+
+# Conditional Summaries
+
+Now that I have a logical vector for Entry and Experienced, I can multiply this by the individual values (see code below) so my summaries are only for particular workers within a title.
+
+NOTE: I have commented out two lines which gave me a count of how many Entry and Experienced in each position (I did this as a check on my work)
+
+```{r eval=TRUE}
+
+nyc_wages <- nyc_group %>% summarise(
+  tot_emp = n(),
+  #entry_emp = sum(EntryTERT),
+  #exper_emp = sum(ExperTERT),
+  avg_pay = mean(reg_grosspaid),
+  med_pay = median(reg_grosspaid),
+  entry = mean(reg_grosspaid*EntryTERT),
+  exper = mean(reg_grosspaid*ExperTERT),
+  avg_pay21 = mean(reg_grosspaid21),
+  med_pay21 = median(reg_grosspaid21),
+  entry21 = mean(reg_grosspaid21*EntryTERT21),
+  exper21 = mean(reg_grosspaid21*ExperTERT21),
+  avg_hourly = mean(hrly),
+  med_hourly = median(hrly),
+  hrly_q25 = quantile(hrly, .25),
+  hrly_q75 = quantile(hrly, .75),
+  avg_hrly21 = mean(hrly21),
+  med_hrly21 = median(hrly21),
+  hrly21_q25 = quantile(hrly21, .25),
+  hrly21_q75 = quantile(hrly21, .75),
+  avg_hours = mean(reg_hours),
+  med_hours = median(reg_hours),
+  q25_hours = quantile(reg_hours, .25),
+  q75_hours = quantile(reg_hours, .75)
+)
+
+rm(nyc_group)
+
+```
+
+ 
+# Export
+
+*NOTE* This code creates a csv. In the final versions I upload, I open the csv in Excel, convert to xlsx, format the data as a table, re-format text so currency variables and numbers are formatted correctly, move the file to NYC_Payroll/output, then upload to SharePoint.
+
+```{r eval=FALSE}
+
+write_csv(nyc_wages, "nyc_wages_FY20adj21_09-28-21.csv")
+
+```
+
+
+# EDA
+
+## Part Time Histogram
+
+Trying to determine if employee hours cluster around certain points - trying to find a good break point for part time vs full time.
+
+```{r eval=FALSE}
+
+rec_spec <- nyc_data %>% filter(title == "RECREATION SPECIALIST") 
+
+hist(rec_spec$reg_hours, breaks= c(0, 500, 1000, 1500, 1700, 1800, 1900))
+
+```
+
+
+

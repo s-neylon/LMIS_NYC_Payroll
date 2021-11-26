@@ -1,0 +1,37 @@
+---
+title: "IPEDS_online"
+author: "Sam Neylon"
+date: "September 11, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#### Using "here" to keep project directory as working directory
+#### NOTE: Rmarkdown will try to make the file it is inside the working directory, but "here" should fix it.
+
+library(here)
+library(tidyverse)
+library(data.table)
+
+```
+
+# Import
+
+```{r eval=FALSE}
+
+all_programs <- fread(here("data/IPEDS_allprograms.csv"))
+
+CIP_online <- fread(here("data/IPEDS_CIPonline.csv"))
+
+```
+
+# Join
+
+```{r eval=FALSE}
+
+online_data <- all_programs %>% 
+
+```
+

@@ -1,0 +1,114 @@
+---
+title: "LMIS_Titles"
+author: "Sam Neylon"
+date: "August 4, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#### Using "here" to keep project directory as working directory
+#### NOTE: Rmarkdown will try to make the file it is inside the working directory, but "here" should fix it.
+
+library(here)
+library(tidyverse)
+library(data.table)
+
+```
+
+# Emp by Agency by Year
+
+This file produces employee counts using the NYC OpenData payroll information.
+
+NYC OpenData: https://data.cityofnewyork.us/City-Government/Citywide-Payroll-Data-Fiscal-Year-/k397-673e
+
+We are comparing with headcount data from the Citizens Budget Commission as a robustness check of our data - https://cbcny.org/research/nyc-employee-headcount
+
+*NOTE* This code is based on code which summarizes wages, and I left much of that code in.
+
+Goal: Create a table which has employment in each agency for each fiscal year
+  * Row: Agency
+  * Column: Fiscal Year
+
+# Import
+
+## fread
+
+```{r eval=TRUE}
+
+# Import/Rename columns
+
+nyc_data <- fread(here("data/ALL_Citywide_Payroll_Data__Fiscal_Year_.csv"), col.names = c("FY", "payroll_num", "agency", "last", "first", "ME", "start_date", "borough", "title", "leave_status", "base_salary", "pay_basis", "reg_hours", "reg_grosspaid", "OT_hrs", "OT_paid", "total_otherPay"))
+
+# Rename columns - Filter for FY2020
+
+nyc_data <- nyc_data %>% select(FY, agency, title, base_salary, pay_basis, reg_hours, reg_grosspaid)
+
+
+```
+
+# Clean
+
+* Filter out zero reg_grosspaid and zero reg_hours
+* "hrly": Calculate "hourly" (not official hourly rate) by dividing Gross Paid by Regular (annual) hours
+* Create an adjusted 2021 wage by multiplying regular gross paid by 1.7%
+
+* Some job titles have asterisk or question marks - after cursory look at the data, I don't believe they are substantially different, so I delete these symbols.
+
+```{r eval=TRUE}
+
+nyc_data <- nyc_data %>%
+  filter(reg_grosspaid > 0 & reg_hours > 0) %>% 
+  mutate(
+  hrly = reg_grosspaid / reg_hours,
+  reg_grosspaid21 = reg_grosspaid * 1.017
+)
+
+nyc_data <- nyc_data %>% mutate(
+  title = gsub("\\*", "", title),
+  title = gsub("\\?", "", title)
+)
+
+```
+
+# Grouping Data
+
+In order to 'summarise' I will first need to group by agency and year
+
+```{r eval=TRUE}
+
+nyc_group <- nyc_data %>% group_by(agency, FY)
+
+nyc_emp <- nyc_group %>% summarise(
+  tot_emp = n())
+
+rm(nyc_group)
+
+```
+
+## Pivot
+
+This created a table with a row for every agency-year. I will now 'pivot_wider' to put years into columns:
+
+```{r eval=TRUE}
+
+nyc_emp <- nyc_emp %>% pivot_wider(names_from = FY, values_from = tot_emp)
+
+```
+
+ 
+# Export
+
+*NOTE* This code creates a csv. In the final versions I upload, I open the csv in Excel, convert to xlsx, format the data as a table, re-format text so currency variables and numbers are formatted correctly, move the file to NYC_Payroll/output, then upload to SharePoint.
+
+```{r eval=FALSE}
+
+write_csv(nyc_emp, "Emp_byAgency_byFY.csv")
+
+```
+
+
+
+
+
